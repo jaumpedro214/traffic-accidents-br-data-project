@@ -2,26 +2,26 @@ import os
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructField, StructType, StringType
 import pyspark.sql.functions as F
+from delta import configure_spark_with_delta_pip
 
-SCHEMA = StructType(
-    [
-        StructField('id', StringType(), True), StructField('data_inversa', StringType(), True),
-        StructField('dia_semana', StringType(), True), StructField('horario', StringType(), True), 
-        StructField('uf', StringType(), True), StructField('br', StringType(), True), 
-        StructField('km', StringType(), True), StructField('municipio', StringType(), True), 
-        StructField('causa_acidente', StringType(), True), StructField('tipo_acidente', StringType(), True), 
-        StructField('classificacao_acidente', StringType(), True), StructField('fase_dia', StringType(), True), 
-        StructField('sentido_via', StringType(), True), StructField('condicao_metereologica', StringType(), True), 
-        StructField('tipo_pista', StringType(), True), StructField('tracado_via', StringType(), True), 
-        StructField('uso_solo', StringType(), True), StructField('pessoas', StringType(), True), 
-        StructField('mortos', StringType(), True), StructField('feridos_leves', StringType(), True), 
-        StructField('feridos_graves', StringType(), True), StructField('ilesos', StringType(), True), 
-        StructField('ignorados', StringType(), True), StructField('feridos', StringType(), True), 
-        StructField('veiculos', StringType(), True), StructField('latitude', StringType(), True), 
-        StructField('longitude', StringType(), True), StructField('regional', StringType(), True), 
-        StructField('delegacia', StringType(), True), StructField('uop', StringType(), True)
-    ]
-)
+# SCHEMA = StructType(
+#     [
+#         StructField('id', StringType(), True), StructField('data_inversa', StringType(), True),
+#         StructField('dia_semana', StringType(), True), StructField('horario', StringType(), True), 
+#         StructField('uf', StringType(), True), StructField('br', StringType(), True), 
+#         StructField('km', StringType(), True), StructField('municipio', StringType(), True), 
+#         StructField('causa_acidente', StringType(), True), StructField('tipo_acidente', StringType(), True), 
+#         StructField('classificacao_acidente', StringType(), True), StructField('fase_dia', StringType(), True), 
+#         StructField('sentido_via', StringType(), True), StructField('condicao_metereologica', StringType(), True), 
+#         StructField('tipo_pista', StringType(), True), StructField('tracado_via', StringType(), True), 
+#         StructField('uso_solo', StringType(), True), StructField('pessoas', StringType(), True), 
+#         StructField('mortos', StringType(), True), StructField('feridos_leves', StringType(), True), 
+#         StructField('feridos_graves', StringType(), True), StructField('ilesos', StringType(), True), 
+#         StructField('ignorados', StringType(), True), StructField('feridos', StringType(), True), 
+#         StructField('veiculos', StringType(), True), StructField('latitude', StringType(), True), 
+#         StructField('longitude', StringType(), True),
+#     ]
+# )
 
 def replace_nulls(df, column, value):
     return (
@@ -47,22 +47,37 @@ def lowercase_column(df, column):
 
 if __name__ == "__main__":
 
-    spark = SparkSession.builder.appName("App").getOrCreate()
+    # Instantiate and configure the Spark Session with delta lake
+    builder = SparkSession.builder.appName("MyApp") \
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+    spark = configure_spark_with_delta_pip(builder).getOrCreate()
     # Reduce loggs to error
     spark.sparkContext.setLogLevel("ERROR")
+    # Reduce the number of partitions
+    spark.conf.set("spark.sql.shuffle.partitions", 4)
 
-    BASE_PATH = "/data/acidentes"
-    files = [f for f in os.listdir(BASE_PATH) if f.endswith('.csv')]
+    # Read the data
+    df_accidents = spark\
+        .read.format("delta")\
+        .load("/data/accidents_raw_union/")\
+        .select(
+            [
+                'id', 'data_inversa',
+                'dia_semana', 'horario', 
+                'uf', 'br', 'km', 'municipio', 
+                'causa_acidente', 'tipo_acidente', 
+                'classificacao_acidente', 'fase_dia', 
+                'sentido_via', 'condicao_metereologica', 
+                'tipo_pista', 'tracado_via', 
+                'uso_solo', 'pessoas', 
+                'mortos', 'feridos_leves', 
+                'feridos_graves', 'ilesos', 
+                'ignorados', 'feridos', 'veiculos', 
+                'latitude', 'longitude'
+            ]
+        )
 
-    df_accidents = (
-        spark
-        .read.format("csv")
-        .option("header", "true")
-        .option("delimiter",";")
-        .option("encoding","ISO-8859-1")
-        .schema(SCHEMA)
-        .load(f"{BASE_PATH}/*.csv")
-    )
 
     # DATA INVERSA - DATE
     # formats: yyyy-MM-dd, dd/MM/yyyy and dd/MM/yy
@@ -70,7 +85,7 @@ if __name__ == "__main__":
     df_accidents = (
         df_accidents
         .withColumn(
-            "DATE",
+            "data_inversa",
             F.when(
                 F.substring("data_inversa", 4, 1) == "-",
                 F.to_date(F.col("data_inversa"), "yyyy-MM-dd")
@@ -81,6 +96,7 @@ if __name__ == "__main__":
                 F.to_date(F.col("data_inversa"), "dd/MM/yyyy")
             )
         )
+        .withColumnRenamed("data_inversa", "date")
     )
 
     # Horario - TIME
@@ -337,19 +353,15 @@ if __name__ == "__main__":
     # uso_solo - STRING
     # replace: (null) for null
     df_accidents = replace_nulls(df_accidents, "uso_solo", F.lit(None))
-
-    # regional - STRING
-    # replace: null, N/A and NA for null
-    df_accidents = replace_nulls(df_accidents, "regional", F.lit(None))
     
     # Columns with counts
-    # pessoas, mortos, feridos_leves, feridos_graves, ilesos, feridos, ignorados - INT
+    # pessoas, mortos, feridos_leves, feridos_graves, ilesos, feridos, ignorados, veiculos - INT
     # replace: null, N/A and NA for null
 
     count_columns = [
         "pessoas", "mortos", "feridos_leves", 
         "feridos_graves", "ilesos", "feridos", 
-        "ignorados"
+        "ignorados", "veiculos"
     ]
 
     for column in count_columns:
@@ -367,7 +379,7 @@ if __name__ == "__main__":
     df_accidents\
         .write.format("parquet")\
         .mode("overwrite")\
-        .save("/data/accidents.parquet")
+        .save("/data/accidents_silver.parquet")
     
     df_accidents.printSchema()
     df_accidents.show(3)
