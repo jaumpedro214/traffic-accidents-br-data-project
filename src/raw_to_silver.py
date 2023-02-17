@@ -341,5 +341,33 @@ if __name__ == "__main__":
     # regional - STRING
     # replace: null, N/A and NA for null
     df_accidents = replace_nulls(df_accidents, "regional", F.lit(None))
+    
+    # Columns with counts
+    # pessoas, mortos, feridos_leves, feridos_graves, ilesos, feridos, ignorados - INT
+    # replace: null, N/A and NA for null
 
-    df_accidents.show(100)
+    count_columns = [
+        "pessoas", "mortos", "feridos_leves", 
+        "feridos_graves", "ilesos", "feridos", 
+        "ignorados"
+    ]
+
+    for column in count_columns:
+        df_accidents = replace_nulls(df_accidents, column, F.lit(None))
+        df_accidents = (
+            df_accidents
+            .withColumn(
+                column,
+                F.col(column).cast("int")
+            )
+        )
+
+
+    # Save to Parquet
+    df_accidents\
+        .write.format("parquet")\
+        .mode("overwrite")\
+        .save("/data/accidents.parquet")
+    
+    df_accidents.printSchema()
+    df_accidents.show(3)
