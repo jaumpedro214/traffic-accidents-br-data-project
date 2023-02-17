@@ -2,7 +2,7 @@ version: '3'
 
 services:
   spark:
-    image: docker.io/bitnami/spark:3.3.1
+    build: .
     environment:
       - SPARK_MODE=master
     ports:
@@ -13,7 +13,7 @@ services:
       - ./data:/data
       - ./src:/src
   spark-worker:
-    image: docker.io/bitnami/spark:3.3.1
+    build: .
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark:7077
