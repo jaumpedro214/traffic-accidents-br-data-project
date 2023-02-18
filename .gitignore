@@ -1,2 +1,4 @@
 data/
 src/*.txt
+src/credentials/
+*.jar

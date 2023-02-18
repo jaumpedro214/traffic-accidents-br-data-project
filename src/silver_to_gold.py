@@ -1,10 +1,11 @@
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
 from delta import configure_spark_with_delta_pip
+import os
 
 if __name__ == "__main__":
     #spark-submit --packages io.delta:delta-core_2.12:2.1.0 silver_to_gold.py
-
+    
     # Instantiate and configure the Spark Session with delta lake
     builder = SparkSession.builder.appName("ConvertSilverToGold") \
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
@@ -15,6 +16,25 @@ if __name__ == "__main__":
     # Reduce the number of partitions
     spark.conf.set("spark.sql.shuffle.partitions", 4)
 
+    # GET THE CREDENTIALS FOR THE GCP BUCKET
+    gcp_credentials_path = "/src/credentials/"
+    # Find JSON in the path
+    for file in os.listdir(gcp_credentials_path):
+        if file.endswith(".json"):
+            gcp_credentials_path = gcp_credentials_path + file
+            break
+
+    # Read the txt in path and read it to the variable BUCKET_NAME
+    # the txt file must contain only one line with the bucket name
+    gcp_bucket_name = ""
+    with open("/src/credentials/bucket_name.txt", "r") as f:
+        gcp_bucket_name = f.read()
+
+    # Insert JSON GCP credentials in the spark session
+    spark._jsc.hadoopConfiguration().set(
+        "google.cloud.auth.service.account.json.keyfile",
+        gcp_credentials_path
+    )
 
     df_accidents_silver = spark\
         .read.format("parquet")\
@@ -81,11 +101,18 @@ if __name__ == "__main__":
         .withColumnRenamed("causa_acidente", "DS_CAUSA")
         .withColumnRenamed("tipo_acidente", "DS_TIPO")
     )
-
+    
+    # Write to GCP bucket
     df_accidents_silver\
         .write.format("parquet")\
         .mode("overwrite")\
-        .save("/data/accidents_gold_agg.parquet/")
+        .option("path", f"gs://{gcp_bucket_name}/data/accidents_gold_agg.parquet/")\
+        .save()
     
+    # Save locally
+    # df_accidents_silver\
+    #     .write.format("parquet")\
+    #     .mode("overwrite")\
+    #     .save("/data/accidents_gold_agg.parquet/")
 
     df_accidents_silver.show(10)
