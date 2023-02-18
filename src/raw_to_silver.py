@@ -1,29 +1,19 @@
-import os
 from pyspark.sql import SparkSession
-from pyspark.sql.types import StructField, StructType, StringType
 import pyspark.sql.functions as F
 from delta import configure_spark_with_delta_pip
 
-# SCHEMA = StructType(
-#     [
-#         StructField('id', StringType(), True), StructField('data_inversa', StringType(), True),
-#         StructField('dia_semana', StringType(), True), StructField('horario', StringType(), True), 
-#         StructField('uf', StringType(), True), StructField('br', StringType(), True), 
-#         StructField('km', StringType(), True), StructField('municipio', StringType(), True), 
-#         StructField('causa_acidente', StringType(), True), StructField('tipo_acidente', StringType(), True), 
-#         StructField('classificacao_acidente', StringType(), True), StructField('fase_dia', StringType(), True), 
-#         StructField('sentido_via', StringType(), True), StructField('condicao_metereologica', StringType(), True), 
-#         StructField('tipo_pista', StringType(), True), StructField('tracado_via', StringType(), True), 
-#         StructField('uso_solo', StringType(), True), StructField('pessoas', StringType(), True), 
-#         StructField('mortos', StringType(), True), StructField('feridos_leves', StringType(), True), 
-#         StructField('feridos_graves', StringType(), True), StructField('ilesos', StringType(), True), 
-#         StructField('ignorados', StringType(), True), StructField('feridos', StringType(), True), 
-#         StructField('veiculos', StringType(), True), StructField('latitude', StringType(), True), 
-#         StructField('longitude', StringType(), True),
-#     ]
-# )
 
 def replace_nulls(df, column, value):
+    """Replace some pedefined strings and NULLs in the column with the specified value
+
+    Args:
+        df (spark.sql.DataFrame): Spark dataframe
+        column (str): The column, must be of type str
+        value (str): The value used to replace 
+
+    Returns:
+        spark.sql.DataFrame: Dataframe with the values replaced
+    """
     return (
         df
         .withColumn(
@@ -40,6 +30,15 @@ def replace_nulls(df, column, value):
     )
 
 def lowercase_column(df, column):
+    """Lowercase an entire column
+
+    Args:
+        df (spark.sql.DataFrame): Spark Dataframe
+        column (str): The column 
+
+    Returns:
+        spark.sql.DataFrame: the dataframe with the column lowercased
+    """
     return df.withColumn(
             column,
             F.lower(F.col(column))
@@ -48,7 +47,7 @@ def lowercase_column(df, column):
 if __name__ == "__main__":
 
     # Instantiate and configure the Spark Session with delta lake
-    builder = SparkSession.builder.appName("MyApp") \
+    builder = SparkSession.builder.appName("ConvertRawToSilver") \
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
     spark = configure_spark_with_delta_pip(builder).getOrCreate()
@@ -87,7 +86,7 @@ if __name__ == "__main__":
         .withColumn(
             "data_inversa",
             F.when(
-                F.substring("data_inversa", 4, 1) == "-",
+                F.col("data_inversa").ilike("____-%"),
                 F.to_date(F.col("data_inversa"), "yyyy-MM-dd")
             ).when(
                 F.col("data_inversa").ilike("%/%/__"),
@@ -255,23 +254,22 @@ if __name__ == "__main__":
         ])
     ]
 
-    replace_causa_acidente_when = F.when(
+    replace_causa_acidente_rule = F.when(
         F.col("causa_acidente").isin( replace_by[0][1] ), replace_by[0][0]
     )
     for replace_value, values_to_replace in replace_by[1:]:
         values_to_replace = [ value.lower() for value in values_to_replace ]
-        replace_causa_acidente_when = replace_causa_acidente_when.when(
+        replace_causa_acidente_rule = replace_causa_acidente_rule.when(
             F.col("causa_acidente").isin( values_to_replace ),
             replace_value
         )
-    
-    replace_causa_acidente_when = replace_causa_acidente_when.otherwise(F.col("causa_acidente"))
+    replace_causa_acidente_rule = replace_causa_acidente_rule.otherwise(F.col("causa_acidente"))
 
     df_accidents = (
         df_accidents
         .withColumn(
             "causa_acidente",
-            replace_causa_acidente_when
+            replace_causa_acidente_rule
         )
     )
 
