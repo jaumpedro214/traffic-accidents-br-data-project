@@ -72,6 +72,10 @@ def plot_accidents_by_uf( panel, gdf_ufs, df_accidents ):
     gdf_ufs.plot(ax=ax, color="blue")
     panel.pyplot(fig)
 
+def plot_agg_big_card( panel, df, column, label="Label" ):
+    value = df[column].sum()
+    panel.metric(label, value=value)
+
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
 
@@ -88,18 +92,24 @@ if __name__ == "__main__":
     # st.dataframe(df_accidents.head(10))
 
     big_number_columns = st.columns(4)
-    for big_number_column in big_number_columns:
-        big_number_column.metric(label=":sun: Label", value=100)
+    plot_agg_big_card(big_number_columns[0], df_accidents, "QT_ACIDENTES",     label="Acidentes")
+    plot_agg_big_card(big_number_columns[1], df_accidents, "QT_TOTAL_PESSOAS", label="Acidentados")
+    plot_agg_big_card(big_number_columns[2], df_accidents, "QT_TOTAL_FERIDOS", label="Feridos")
+    plot_agg_big_card(big_number_columns[3], df_accidents, "QT_TOTAL_MORTOS",  label="Mortos")
 
-    columns_lv_1 = st.columns([.50, .25, .25])
+
+    columns_lv_1 = st.columns([.75, .25])
 
     columns_lv_1[0].markdown("## Rodovias Federais")
-    columns_lv_1[1].markdown("## Total de Acidentes")
-    columns_lv_1[2].markdown("## Causas")
+    columns_lv_1[1].markdown("## Causas")
 
     tab_por_br, tab_por_uf = columns_lv_1[0].tabs(["Por BR", "Por UF"])
+    tab_por_br_columns = tab_por_br.columns([.50, .25])
+    tab_por_uf_columns = tab_por_uf.columns([.50, .25])
 
-    plot_highways_data_with_count(tab_por_br, gdf_rodovias)
-    plot_accidents_by_uf(tab_por_uf, gdf_ufs, df_accidents)
+
+
+    plot_highways_data_with_count(tab_por_br_columns[0], gdf_rodovias)
+    plot_accidents_by_uf(tab_por_uf_columns[0], gdf_ufs, df_accidents)
 
     st.text("Rodovias Federais")
