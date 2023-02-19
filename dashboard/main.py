@@ -6,9 +6,13 @@ from pyarrow import fs
 
 import pandas as pd
 import geopandas as gpd
+import contextily as ctx
 
 # Visualization
 import matplotlib.pyplot as plt
+import matplotlib.colors as colors
+import seaborn as sns
+
 
 
 BR_RODOVIAS_JSON_GIST = "https://gist.githubusercontent.com/jaumpedro214/8524d59a2e7791c504eda0783975bcb0/raw/810b46a61fe909ca0a8416d762928e230fe8aa8c/rodovias_federais_brasil.json"
@@ -30,11 +34,17 @@ def get_br_rodovias():
     # Convert to geodataframe
     gdf_rodovias = gpd.GeoDataFrame(gdf_rodovias, geometry="geometry")
 
+    # Set CRS
+    gdf_rodovias.crs = "EPSG:4326"
+
     return gdf_rodovias
 
 @st.cache_data
 def get_br_ufs():
     gdf_ufs = gpd.read_file(BR_UFS_JSON)
+
+    # Set CRS
+    gdf_ufs.crs = "EPSG:4326"
 
     return gdf_ufs
 
@@ -58,16 +68,52 @@ def add_filters():
 # Plotting functions
 # =====================
 
-def plot_highways_data_with_count( panel, gdf_rodovias ):
+def plot_highways_map_with_count( panel, gdf_rodovias, value_column="QT_ACIDENTES" ):
     # Join accidents data with highways data   
     fig, ax = plt.subplots(figsize=(5, 5))
-    gdf_rodovias.plot(ax=ax, color="red")
+    gdf_rodovias.plot(
+        ax=ax, 
+        column=value_column, 
+        legend=False,
+        linewidth=1,
+        cmap="Reds",
+    )
+    ax.set_axis_off()
+
+    # add colorbar below the plot
+    # with the values 100, 1000, 10000, 100000, 50000, 300000
+    sm = plt.cm.ScalarMappable(
+        cmap="Reds", 
+        norm = colors.LogNorm(
+            vmin=100, 
+            vmax=gdf_rodovias[value_column].max(),
+        )
+    )
+    ticks = [100, 1000, 10000, 100000, 50000, 300000]
+    # automatically set the labels to the formatted ticks
+    ticks_labels = [ f"{tick//1000} mil" if tick >= 1000 else f"{tick}" for tick in ticks ]
+    ticks_labels[-1] = f"<{ticks_labels[-1]}"
+    ticks_labels[0] = f">{ticks_labels[0]}"
+        
+    # add the colorbar to the figure
+    cbar = fig.colorbar(
+        sm, ax=ax, orientation="horizontal", pad=0.05, shrink=0.5,
+        ticks=ticks
+    )
+    cbar.ax.set_xticklabels(ticks_labels)
+    cbar.ax.tick_params(rotation=45, labelsize=8)
+
+    # Add background map
+    ctx.add_basemap(
+        ax, 
+        crs=gdf_rodovias.crs.to_string(), 
+        source=ctx.providers.Stamen.TonerLite
+    )
 
     panel.pyplot(fig)
 
 
 def plot_accidents_by_uf( panel, gdf_ufs, df_accidents ):
-
     fig, ax = plt.subplots(figsize=(5, 5))
     gdf_ufs.plot(ax=ax, color="blue")
     panel.pyplot(fig)
@@ -107,9 +153,15 @@ if __name__ == "__main__":
     tab_por_br_columns = tab_por_br.columns([.50, .25])
     tab_por_uf_columns = tab_por_uf.columns([.50, .25])
 
+    # Plotting Rodovias Federais - Accidents by BR
+    # Group df_accidents by BR
+    df_accidents_por_br = df_accidents.groupby("DS_BR").sum().reset_index()
+    # Join with gdf_rodovias
+    gdf_rodovias = gdf_rodovias.merge(df_accidents_por_br, left_on="vl_br", right_on="DS_BR")
+    plot_highways_map_with_count(tab_por_br_columns[0], gdf_rodovias, value_column="QT_ACIDENTES")
 
 
-    plot_highways_data_with_count(tab_por_br_columns[0], gdf_rodovias)
+
     plot_accidents_by_uf(tab_por_uf_columns[0], gdf_ufs, df_accidents)
 
     st.text("Rodovias Federais")
