@@ -1,0 +1,9 @@
+streamlit
+pandas
+scipy
+geopandas
+matplotlib
+contextily
+pyarrow
+fsspec
+gcsfs

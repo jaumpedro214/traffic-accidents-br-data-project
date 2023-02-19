@@ -1,6 +1,15 @@
 version: '3'
 
 services:
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    volumes:
+      - ./dashboard:/dashboard
+      - ./data:/data
+    ports:
+      - 8501:8501
   spark:
     build: .
     environment:
