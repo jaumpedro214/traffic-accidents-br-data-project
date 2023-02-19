@@ -3,6 +3,8 @@ pandas
 scipy
 geopandas
 matplotlib
+seaborn
+squarify
 contextily
 pyarrow
 fsspec

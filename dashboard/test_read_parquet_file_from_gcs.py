@@ -1,4 +1,3 @@
-import pandas as pd
 import pyarrow.parquet as pq
 
 from pyarrow import fs
