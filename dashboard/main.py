@@ -3,6 +3,7 @@ import streamlit as st
 # Data manipulation
 import pyarrow.parquet as pq
 from pyarrow import fs
+import numpy as np
 
 import pandas as pd
 import geopandas as gpd
@@ -23,7 +24,7 @@ BR_UFS_JSON = "https://raw.githubusercontent.com/fititnt/gis-dataset-brasil/mast
 # =====================
 
 @st.cache_data
-def get_br_rodovias():
+def get_geodf_br_rodovias():
     gdf_rodovias = gpd.read_file(BR_RODOVIAS_JSON_GIST, driver="GeoJSON")
 
     # Group geometry by vl_br
@@ -40,7 +41,7 @@ def get_br_rodovias():
     return gdf_rodovias
 
 @st.cache_data
-def get_br_ufs():
+def get_geodf_br_ufs():
     gdf_ufs = gpd.read_file(BR_UFS_JSON)
 
     # Set CRS
@@ -49,7 +50,7 @@ def get_br_ufs():
     return gdf_ufs
 
 @st.cache_data
-def get_accidents_gold_agg():
+def get_df_accidents_gold_agg():
     PATH = "data-lake-accidents/data/accidents_gold_agg.parquet"
     gcs = fs.GcsFileSystem(anonymous=True)
     return pq.ParquetDataset(PATH, filesystem=gcs).read_pandas().to_pandas()
@@ -68,57 +69,98 @@ def add_filters():
 # Plotting functions
 # =====================
 
-def plot_highways_map_with_count( panel, gdf_rodovias, value_column="QT_ACIDENTES" ):
+def plot_highways_map_with_count( panel, gdf_rodovias, column="QT_ACIDENTES" ):
+    max_value = gdf_rodovias[column].max()
+    min_value = gdf_rodovias[column].min()
+    
     # Join accidents data with highways data   
     fig, ax = plt.subplots(figsize=(5, 5))
+
+    # get Reds palette with N=6 colors
+    cmap = colors.ListedColormap(sns.color_palette("Reds", 6))
+    sm = plt.cm.ScalarMappable(
+        cmap=cmap,
+        norm=colors.Normalize(
+            vmin=min_value,
+            vmax=max_value,
+        )
+    )
+
     gdf_rodovias.plot(
         ax=ax, 
-        column=value_column, 
+        column=column, 
         legend=False,
         linewidth=1,
-        cmap="Reds",
+        cmap=cmap,
+        norm=sm.norm
     )
     ax.set_axis_off()
 
     # add colorbar below the plot
-    # with the values 100, 1000, 10000, 100000, 50000, 300000
+    ticks = np.linspace(min_value, max_value, 6+1)
+    ticks_labels_formatted = [ 
+        f"{tick//1e3:.0f} mil" if tick >= 1e3 else 
+        f"{int(tick)}" for tick in ticks 
+    ]
+    color_bar_legend = fig.colorbar(
+        sm, ax=ax, orientation="horizontal", pad=0.05, shrink=0.5,
+        ticks=ticks
+    )
+    color_bar_legend.ax.set_xticklabels(ticks_labels_formatted)
+    color_bar_legend.ax.tick_params(rotation=45, labelsize=8)
+
+    # Add background map
+    # ctx.add_basemap(
+    #     ax, 
+    #     crs=gdf_rodovias.crs.to_string(), 
+    #     source=ctx.providers.Stamen.TonerLite
+    # )
+
+    panel.pyplot(fig)
+
+
+def plot_states_map_with_count( panel, gdf_ufs, column="QT_ACIDENTES" ):
+    max_value = gdf_rodovias[column].max()
+    min_value = gdf_rodovias[column].min()
+
+    fig, ax = plt.subplots(figsize=(5, 5))
     sm = plt.cm.ScalarMappable(
         cmap="Reds", 
-        norm = colors.LogNorm(
-            vmin=100, 
-            vmax=gdf_rodovias[value_column].max(),
+        norm  = colors.Normalize(
+            vmin=1,
+            vmax=gdf_ufs[column].max(),
         )
     )
-    ticks = [100, 1000, 10000, 100000, 50000, 300000]
-    # automatically set the labels to the formatted ticks
-    ticks_labels = [ f"{tick//1000} mil" if tick >= 1000 else f"{tick}" for tick in ticks ]
-    ticks_labels[-1] = f"<{ticks_labels[-1]}"
-    ticks_labels[0] = f">{ticks_labels[0]}"
+
+    gdf_ufs.plot(
+        ax=ax, 
+        column=column, 
+        legend=False,
+        linewidth=1,
+        cmap=sm.cmap,
+    )
+
+    ax.set_axis_off()
+
+    # add colorbar below the plot
+    ticks = np.linspace(min_value, max_value, 7)
+    ticks_labels_formatted = [ 
+        f"{tick//1000:.0f} mil" if tick >= 1000 else f"{tick:.0f}"
+        for tick in ticks 
+    ]
         
     # add the colorbar to the figure
     cbar = fig.colorbar(
         sm, ax=ax, orientation="horizontal", pad=0.05, shrink=0.5,
         ticks=ticks
     )
-    cbar.ax.set_xticklabels(ticks_labels)
+    cbar.ax.set_xticklabels(ticks_labels_formatted)
     cbar.ax.tick_params(rotation=45, labelsize=8)
-
-    # Add background map
-    ctx.add_basemap(
-        ax, 
-        crs=gdf_rodovias.crs.to_string(), 
-        source=ctx.providers.Stamen.TonerLite
-    )
-
+    
+    # Add plot to the streamlit panel
     panel.pyplot(fig)
 
-
-def plot_accidents_by_uf( panel, gdf_ufs, df_accidents ):
-    fig, ax = plt.subplots(figsize=(5, 5))
-    gdf_ufs.plot(ax=ax, color="blue")
-    panel.pyplot(fig)
-
-def plot_agg_big_card( panel, df, column, label="Label" ):
+def plot_column_sum_on_card( panel, df, column, label="Label" ):
     value = df[column].sum()
     panel.metric(label, value=value)
 
@@ -127,9 +169,9 @@ if __name__ == "__main__":
 
     st.sidebar.title("Sidebar")
 
-    gdf_rodovias = get_br_rodovias()
-    gdf_ufs = get_br_ufs()
-    df_accidents = get_accidents_gold_agg()
+    gdf_rodovias = get_geodf_br_rodovias()
+    gdf_ufs = get_geodf_br_ufs()
+    df_accidents = get_df_accidents_gold_agg()
 
     add_filters()
     st.title("Hello World!")
@@ -138,10 +180,10 @@ if __name__ == "__main__":
     # st.dataframe(df_accidents.head(10))
 
     big_number_columns = st.columns(4)
-    plot_agg_big_card(big_number_columns[0], df_accidents, "QT_ACIDENTES",     label="Acidentes")
-    plot_agg_big_card(big_number_columns[1], df_accidents, "QT_TOTAL_PESSOAS", label="Acidentados")
-    plot_agg_big_card(big_number_columns[2], df_accidents, "QT_TOTAL_FERIDOS", label="Feridos")
-    plot_agg_big_card(big_number_columns[3], df_accidents, "QT_TOTAL_MORTOS",  label="Mortos")
+    plot_column_sum_on_card(big_number_columns[0], df_accidents, "QT_ACIDENTES",     label="Acidentes")
+    plot_column_sum_on_card(big_number_columns[1], df_accidents, "QT_TOTAL_PESSOAS", label="Acidentados")
+    plot_column_sum_on_card(big_number_columns[2], df_accidents, "QT_TOTAL_FERIDOS", label="Feridos")
+    plot_column_sum_on_card(big_number_columns[3], df_accidents, "QT_TOTAL_MORTOS",  label="Mortos")
 
 
     columns_lv_1 = st.columns([.75, .25])
@@ -155,13 +197,15 @@ if __name__ == "__main__":
 
     # Plotting Rodovias Federais - Accidents by BR
     # Group df_accidents by BR
-    df_accidents_por_br = df_accidents.groupby("DS_BR").sum().reset_index()
+    df_accidents_por_br = df_accidents[["DS_BR", "QT_ACIDENTES"]].groupby("DS_BR").sum().reset_index()
     # Join with gdf_rodovias
     gdf_rodovias = gdf_rodovias.merge(df_accidents_por_br, left_on="vl_br", right_on="DS_BR")
-    plot_highways_map_with_count(tab_por_br_columns[0], gdf_rodovias, value_column="QT_ACIDENTES")
+    plot_highways_map_with_count(tab_por_br_columns[0], gdf_rodovias, column="QT_ACIDENTES")
 
-
-
-    plot_accidents_by_uf(tab_por_uf_columns[0], gdf_ufs, df_accidents)
+    # Plotting UFs - Accidents by UF  
+    df_accidents_por_uf = df_accidents[["SG_UF", "QT_ACIDENTES"]].groupby("SG_UF").sum().reset_index()
+    # Join with gdf_ufs
+    gdf_ufs = gdf_ufs.merge(df_accidents_por_uf, left_on="id", right_on="SG_UF")
+    plot_states_map_with_count(tab_por_uf_columns[0], gdf_ufs, column="QT_ACIDENTES")
 
     st.text("Rodovias Federais")
