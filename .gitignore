@@ -2,3 +2,4 @@ data/
 src/*.txt
 src/credentials/
 *.jar
+__pycache__
