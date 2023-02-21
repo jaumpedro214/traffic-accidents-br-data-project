@@ -304,6 +304,7 @@ if __name__ == "__main__":
                 F.col("tipo_acidente") == "saída de leito carroçável",
                 "saída de pista"
             )
+            .otherwise(F.col("tipo_acidente"))
         )
     )
 
