@@ -75,6 +75,14 @@ def aggregate_dataframe_by_column(
     # Aggregate dataframe
     df_agg = df[[*columns_to_aggregate, *columns_to_groupby]].groupby(columns_to_groupby).sum().reset_index()
     return df_agg
+
+def calculate_death_rate_by_accident_type(df):
+
+    df_agg = df[["DS_TIPO", "QT_TOTAL_MORTOS", "QT_TOTAL_PESSOAS"]].groupby("DS_TIPO").sum().reset_index()
+    df_agg["TAXA_LETALIDADE"] = df_agg["QT_TOTAL_MORTOS"] / df_agg["QT_TOTAL_PESSOAS"]
+
+    return df_agg
+
 # =====================
 # Filters
 # =====================
@@ -138,6 +146,31 @@ def plot_highways_map_with_count( panel, gdf_rodovias, column="QT_ACIDENTES" ):
 
     panel.pyplot(fig)
 
+def plot_stylized_df_table_with_counts( panel, df, id_column, value_column, value_column_name=None ):
+
+    df = (
+        df[[id_column, value_column]]
+        .sort_values(value_column, ascending=False)
+        .head(15)
+        .set_index(id_column)
+        .rename(columns={value_column: value_column_name or value_column})
+    )
+    value_column = value_column_name or value_column
+    # Color columns
+    # using "Reds" palette with N=6 colors
+    cmap = colors.ListedColormap(sns.color_palette("Reds", 6))
+    # Style table
+    df_styled = df.style.background_gradient(
+        cmap=cmap
+    )
+    # Format values XXX XXX,XX  
+    df_styled = df_styled.format({
+        value_column: lambda x: f"{x:,.0f}"
+    })
+
+    # Show table
+    panel.table(df_styled)
+
 def plot_states_map_with_count( panel, gdf_ufs, column="QT_ACIDENTES" ):
     max_value = gdf_ufs[column].max()
     min_value = gdf_ufs[column].min()
@@ -190,15 +223,19 @@ def plot_treemap_by_column( panel, df, column, label="Label" ):
     # Order by PERCENTUAL
     df = df.sort_values(by="PERCENTUAL", ascending=False)
     # Limit top 10 andd aggregate the rest using "Outros"
-    df = df.iloc[:10].append(
-        pd.DataFrame(
-            {
-                label: ["Outros"],
-                column: [df.iloc[10:][column].sum()],
-                "PERCENTUAL": [df.iloc[10:]["PERCENTUAL"].sum()],
-            }
-        )
+    df = pd.concat(
+        [
+            df.iloc[:10],
+            pd.DataFrame(
+                {
+                    label: ["Outros"],
+                    column: [df.iloc[10:][column].sum()],
+                    "PERCENTUAL": [df.iloc[10:]["PERCENTUAL"].sum()],
+                }
+            )
+        ]
     )
+
     # wrap text on table over 20 characters
     df[label] = df[label].apply(
         lambda x: textwrap.fill(x, width=15) if len(x) < 35 else textwrap.fill(x[:35] + "...", width=15) 
@@ -223,6 +260,42 @@ def plot_treemap_by_column( panel, df, column, label="Label" ):
 
     panel.pyplot(fig)
 
+def plot_vertical_bar_chart_death_rate( panel, df, values_column="TAXA_LETALIDADE", label_column="DS_TIPO" ):
+
+    # plot vertical bar chart with seaborn
+    df = df.sort_values(by=values_column, ascending=False)
+    fig, ax = plt.subplots(figsize=(4, 8))
+
+    sns.barplot(
+        data=df,
+        y=label_column,
+        x=values_column,
+        ax=ax,
+        color="#f0050d"#"#d1060d" 
+    )
+
+    # Add percentage labels
+    for p in ax.patches:
+        width = p.get_width()
+        ax.text(
+            width*1.02,
+            p.get_y() + p.get_height() / 2.0,
+            f"{100*width:.1f}%",
+            ha="left",
+            va="center",
+        )
+
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    # remove xticks
+    ax.set_xticks([])
+
+    panel.pyplot(fig)
+
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
 
@@ -231,6 +304,9 @@ if __name__ == "__main__":
     gdf_rodovias = get_geodf_br_rodovias()
     gdf_ufs = get_geodf_br_ufs()
     df_accidents = get_df_accidents_gold_agg()
+
+    df_accidents["DATA"] = pd.to_datetime(df_accidents["DATA"])
+    df_accidents["ANO"] = df_accidents["DATA"].dt.year
 
     add_filters()
     st.title("Hello World!")
@@ -257,17 +333,16 @@ if __name__ == "__main__":
     # Filter BR with more than 1000 accidents
     gdf_accidents_by_br = gdf_accidents_by_br.loc[gdf_accidents_by_br["QT_ACIDENTES"] > 1000]
     plot_highways_map_with_count(tab_por_br_columns[0], gdf_accidents_by_br, column="QT_ACIDENTES")
+    plot_stylized_df_table_with_counts(tab_por_br_columns[1], gdf_accidents_by_br, "DS_BR","QT_ACIDENTES", "Qtd. Acidentes")
 
     # Plotting States - Accidents by UF
     gdf_accidents_by_uf = aggregate_dataframe_and_join_with_geodataframe(
         df_accidents, gdf_ufs, "QT_ACIDENTES", "SG_UF", "id"
     )
     plot_states_map_with_count(tab_por_uf_columns[0], gdf_accidents_by_uf, column="QT_ACIDENTES")
-
+    plot_stylized_df_table_with_counts(tab_por_uf_columns[1], gdf_accidents_by_uf, "SG_UF","QT_ACIDENTES", "Qtd. Acidentes")
 
     # Group by accidents by year
-    df_accidents["DATA"] = pd.to_datetime(df_accidents["DATA"])
-    df_accidents["ANO"] = df_accidents["DATA"].dt.year
     df_accidents_by_year = aggregate_dataframe_by_column(df_accidents, ["QT_ACIDENTES"], ["ANO"])
 
     # Plot accidents by year
@@ -281,5 +356,8 @@ if __name__ == "__main__":
     df_accidents_by_cause = aggregate_dataframe_by_column(df_accidents, ["QT_ACIDENTES"], ["DS_CAUSA"])
     # Plot accidents by cause
     plot_treemap_by_column(columns_lv_1[1], df_accidents_by_cause, "QT_ACIDENTES", label="DS_CAUSA")
+
+    df_death_rate_by_type = calculate_death_rate_by_accident_type(df_accidents)
+    plot_vertical_bar_chart_death_rate(columns_lv_1[1], df_death_rate_by_type)
 
     st.text("Rodovias Federais")
