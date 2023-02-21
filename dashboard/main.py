@@ -87,7 +87,7 @@ def calculate_death_rate_by_accident_type(df):
 # Filters
 # =====================
 
-def add_filters(df_acidentes):
+def add_filters_on_sidebar(df_acidentes):
 
     min_year = int(df_acidentes["ANO"].min())
     max_year = int(df_acidentes["ANO"].max())
@@ -144,7 +144,16 @@ def plot_highways_map_with_count( panel, gdf_rodovias, column="QT_ACIDENTES" ):
         cmap=cmap,
         norm=sm.norm
     )
-    ax.set_axis_off()
+    
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    # remove xticks
+    ax.set_xticks([])
+    ax.set_yticks([])
 
     # add colorbar below the plot
     ticks = np.linspace(min_value, max_value, 6+1)
@@ -168,7 +177,7 @@ def plot_highways_map_with_count( panel, gdf_rodovias, column="QT_ACIDENTES" ):
 
     panel.pyplot(fig)
 
-def plot_stylized_df_table_with_counts( panel, df, id_column, value_column, value_column_name=None ):
+def plot_stylized_df_table_with_counts( panel, df, id_column, value_column, value_column_name=None, n_colors=256 ):
 
     df = (
         df[[id_column, value_column]]
@@ -180,7 +189,7 @@ def plot_stylized_df_table_with_counts( panel, df, id_column, value_column, valu
     value_column = value_column_name or value_column
     # Color columns
     # using "Reds" palette with N=6 colors
-    cmap = colors.ListedColormap(sns.color_palette("Reds", 6))
+    cmap = colors.ListedColormap(sns.color_palette("Reds", n_colors))
     # Style table
     df_styled = df.style.background_gradient(
         cmap=cmap
@@ -201,8 +210,8 @@ def plot_states_map_with_count( panel, gdf_ufs, column="QT_ACIDENTES" ):
     sm = plt.cm.ScalarMappable(
         cmap="Reds", 
         norm  = colors.Normalize(
-            vmin=1,
-            vmax=gdf_ufs[column].max(),
+            vmin=min_value,
+            vmax=max_value,
         )
     )
 
@@ -214,7 +223,15 @@ def plot_states_map_with_count( panel, gdf_ufs, column="QT_ACIDENTES" ):
         cmap=sm.cmap,
     )
 
-    ax.set_axis_off()
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    # remove xticks
+    ax.set_xticks([])
+    ax.set_yticks([])
 
     # add colorbar below the plot
     ticks = np.linspace(min_value, max_value, 7)
@@ -359,8 +376,8 @@ def plot_horizontal_bar_chart_with_counts( panel, df, y_column="QT_ACIDENTES", x
 
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
-
-    st.sidebar.title("Sidebar")
+    st.sidebar.title("Filtros")
+    st.title("Acidentes de Trânsito nas Rodovias do Brasil")
 
     gdf_rodovias = get_geodf_br_rodovias()
     gdf_ufs = get_geodf_br_ufs()
@@ -370,7 +387,7 @@ if __name__ == "__main__":
     df_accidents["ANO"] = df_accidents["DATA"].dt.year.astype(int)
 
     # Get filters
-    min_year, max_year, tipos, ufs, brs = add_filters(df_accidents)
+    min_year, max_year, tipos, ufs, brs = add_filters_on_sidebar(df_accidents)
     # Filter data
     df_accidents = df_accidents.loc[
         (df_accidents["ANO"] >= min_year)
@@ -380,11 +397,11 @@ if __name__ == "__main__":
         & (df_accidents["DS_BR"].isin(brs))
     ]
 
-    st.title("Hello World!")
 
     big_number_columns = st.columns(4)
     columns_lv_1 = st.columns([.60, .40])
 
+    columns_lv_1[0].markdown("### Contagem por localidade")
     tab_por_br, tab_por_uf = columns_lv_1[0].tabs(["Por BR", "Por UF"])
     tab_por_br_columns = tab_por_br.columns([.50, .25])
     tab_por_uf_columns = tab_por_uf.columns([.50, .25])
@@ -394,9 +411,9 @@ if __name__ == "__main__":
     plot_column_sum_on_card(big_number_columns[2], df_accidents, "QT_TOTAL_FERIDOS", label="Feridos")
     plot_column_sum_on_card(big_number_columns[3], df_accidents, "QT_TOTAL_MORTOS",  label="Mortos")
     
-    columns_lv_1[0].markdown("## Rodovias Federais")
-    columns_lv_1[1].markdown("## Causas")
+    columns_lv_1[1].markdown("### Principais Causas")
 
+    columns_lv_1[0].markdown("### Acidentes por ano")
     # Plotting Rodovias Federais - Accidents by BR
     gdf_accidents_by_br = aggregate_dataframe_and_join_with_geodataframe(
         df_accidents, gdf_rodovias, "QT_ACIDENTES", "DS_BR", "vl_br"
@@ -404,7 +421,7 @@ if __name__ == "__main__":
     # Filter BR with more than 1000 accidents
     gdf_accidents_by_br = gdf_accidents_by_br.loc[gdf_accidents_by_br["QT_ACIDENTES"] > 1000]
     plot_highways_map_with_count(tab_por_br_columns[0], gdf_accidents_by_br, column="QT_ACIDENTES")
-    plot_stylized_df_table_with_counts(tab_por_br_columns[1], gdf_accidents_by_br, "DS_BR","QT_ACIDENTES", "Qtd. Acidentes")
+    plot_stylized_df_table_with_counts(tab_por_br_columns[1], gdf_accidents_by_br, "DS_BR","QT_ACIDENTES", "Qtd. Acidentes", n_colors=6)
 
     # Plotting States - Accidents by UF
     gdf_accidents_by_uf = aggregate_dataframe_and_join_with_geodataframe(
@@ -425,6 +442,5 @@ if __name__ == "__main__":
     plot_treemap_by_column(columns_lv_1[1], df_accidents_by_cause, "QT_ACIDENTES", label="DS_CAUSA")
 
     df_death_rate_by_type = calculate_death_rate_by_accident_type(df_accidents)
+    columns_lv_1[1].markdown("### Mortalidade de cada tipo de acidente")
     plot_vertical_bar_chart_death_rate(columns_lv_1[1], df_death_rate_by_type)
-
-    st.text("Rodovias Federais")
