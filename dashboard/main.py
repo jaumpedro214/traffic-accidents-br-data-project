@@ -87,11 +87,33 @@ def calculate_death_rate_by_accident_type(df):
 # Filters
 # =====================
 
-def add_filters():
+def add_filters(df_acidentes):
 
-    st.sidebar.text("Filtro1")
-    st.sidebar.text("Filtro2")
-    st.sidebar.text("Filtro3")
+    min_year = int(df_acidentes["ANO"].min())
+    max_year = int(df_acidentes["ANO"].max())
+    min_year_selected, max_year_selected = st.sidebar.slider(
+        "Ano", 
+        min_value=min_year, max_value=max_year, 
+        value=(min_year, max_year)
+    )
+
+    tipos = list( df_acidentes["DS_TIPO"].unique() )
+    tipos_selected = st.sidebar.multiselect("Tipo de Acidente", tipos, default=[])
+    if tipos_selected == []:
+        tipos_selected = tipos
+
+    ufs = list( df_acidentes["SG_UF"].unique() )
+    ufs_selected = st.sidebar.multiselect("UF", ufs, default=[])
+    if ufs_selected == []:
+        ufs_selected = ufs
+
+    brs = list( df_acidentes["DS_BR"].unique() )
+    brs_selected = st.sidebar.multiselect("BR", brs, default=[])
+    if brs_selected == []:
+        brs_selected = brs
+
+    return min_year_selected, max_year_selected, tipos_selected, ufs_selected, brs_selected
+
 
 # =====================
 # Plotting functions
@@ -296,6 +318,45 @@ def plot_vertical_bar_chart_death_rate( panel, df, values_column="TAXA_LETALIDAD
 
     panel.pyplot(fig)
 
+def plot_horizontal_bar_chart_with_counts( panel, df, y_column="QT_ACIDENTES", x_column="ANO"):
+
+    # plot horizontal bar chart with seaborn
+    fig, ax = plt.subplots(figsize=(8, 2))
+
+    sns.barplot(
+        data=df,
+        x=x_column,
+        y=y_column,
+        ax=ax,
+        color="#f0050d"#"#d1060d"
+    )
+
+    # Add total count labels on top of the bars
+    for p in ax.patches:
+        height = p.get_height()
+        ax.text(
+            p.get_x() + p.get_width() / 2.0,
+            height+0.1,
+            f"{height/1e3:.1f}" ,
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
+
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    # Remove box around the plot
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    # ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    # remove y ticks
+    ax.set_yticks([])
+    # rotate xticks 90 degrees
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=90, fontsize=8)
+
+    panel.pyplot(fig)
+
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
 
@@ -306,9 +367,19 @@ if __name__ == "__main__":
     df_accidents = get_df_accidents_gold_agg()
 
     df_accidents["DATA"] = pd.to_datetime(df_accidents["DATA"])
-    df_accidents["ANO"] = df_accidents["DATA"].dt.year
+    df_accidents["ANO"] = df_accidents["DATA"].dt.year.astype(int)
 
-    add_filters()
+    # Get filters
+    min_year, max_year, tipos, ufs, brs = add_filters(df_accidents)
+    # Filter data
+    df_accidents = df_accidents.loc[
+        (df_accidents["ANO"] >= min_year)
+        & (df_accidents["ANO"] <= max_year)
+        & (df_accidents["DS_TIPO"].isin(tipos))
+        & (df_accidents["SG_UF"].isin(ufs))
+        & (df_accidents["DS_BR"].isin(brs))
+    ]
+
     st.title("Hello World!")
 
     big_number_columns = st.columns(4)
@@ -346,11 +417,7 @@ if __name__ == "__main__":
     df_accidents_by_year = aggregate_dataframe_by_column(df_accidents, ["QT_ACIDENTES"], ["ANO"])
 
     # Plot accidents by year
-    # using st.bar_chart
-    columns_lv_1[0].bar_chart(
-        df_accidents_by_year,
-        x="ANO", y="QT_ACIDENTES",
-    )
+    plot_horizontal_bar_chart_with_counts(columns_lv_1[0], df_accidents_by_year, y_column="QT_ACIDENTES", x_column="ANO")
 
     # Group by accidents by DS_CAUSA
     df_accidents_by_cause = aggregate_dataframe_by_column(df_accidents, ["QT_ACIDENTES"], ["DS_CAUSA"])
